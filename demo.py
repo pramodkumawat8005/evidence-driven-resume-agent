@@ -144,6 +144,10 @@ from groq import Groq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 
+from states import MainState
+
+from states import MainState
+
 load_dotenv()
 openrouter_api_key = os.getenv("openrouter_api_key")
 groq_api_key = os.getenv("GROQ_API_KEY")
@@ -170,12 +174,14 @@ for model in models.data:
 # repo_model = model.invoke("Say hello")
 # print(f"Repo model response: {repo_model}")
 from langchain_openai import ChatOpenAI
-
+from states import MainState
 model = ChatOpenAI(
     model="openrouter/free",
     api_key=openrouter_api_key,
     base_url="https://openrouter.ai/api/v1"
 )
 
-response = model.invoke("Hello")
+repo_analyses =MainState.repo_code_data
+prompt=f"""analyze the following GitHub repository content and extract ONLY skills, projects, and achievements that are explicitly present in the repository.{repo_analyses}"""
+response = model.invoke(prompt)
 print(response.content)
