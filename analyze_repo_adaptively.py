@@ -6,19 +6,19 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 import os
 load_dotenv()
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY1")
 groq_api_key = os.getenv("GROQ_API_KEY")
-openrouter_api_key = os.getenv("openrouter_api_key")
-model = ChatOpenAI(
+openrouter_api_key = os.getenv("openrouter_api_key1")
+model1 = ChatOpenAI(
     model="openrouter/free",
     api_key=openrouter_api_key,
     base_url="https://openrouter.ai/api/v1"
 )
 model1 = ChatGroq(
-      model="openai/gpt-oss-120b",
+      model="llama-3.3-70b-versatile",
       api_key=groq_api_key,
       )
-model1 = ChatGoogleGenerativeAI(
+model = ChatGoogleGenerativeAI(
      model="gemini-2.5-flash",
      api_key=GEMINI_API_KEY,
  )
@@ -202,46 +202,45 @@ async def analyze_repo_adaptively(
     # -----------------------------------------
     # Combined repository content
     # -----------------------------------------
+
     total_chars = sum(
         len(content)
         for content in files.values()
     )
+
+    # Rough token estimation
+    estimated_tokens = total_chars // 4
+
     print(
         f"\nRepo: {repo_name}"
         f"\nFiles: {len(files)}"
-        f"\nCharacters: {total_chars}"   
+        f"\nCharacters: {total_chars}"
+        f"\nEstimated tokens: {estimated_tokens}"
     )
+
     # -----------------------------------------
     # SMALL CONTEXT
     # -----------------------------------------
 
     SAFE_TOKEN_LIMIT = 12000
 
-    if total_chars <= SAFE_TOKEN_LIMIT:
+    if estimated_tokens <= SAFE_TOKEN_LIMIT:
 
         print(
             f"Using DIRECT analysis for {repo_name}"
         )
-        DIRECT_results = []
-        result = await direct_repo_analysis(
+
+        return await direct_repo_analysis(
             repo_name,
             files
         )
-        DIRECT_results.append(result)
-    return DIRECT_results
+
     # -----------------------------------------
     # LARGE CONTEXT
     # -----------------------------------------
 
-
-
-    # Rough token estimation
-    estimated_tokens = total_chars // 4
-
-
     print(
         f"Using MAP-REDUCE analysis for {repo_name}"
-        f"\nEstimated tokens: {estimated_tokens}"
     )
 
     batch_results = []
