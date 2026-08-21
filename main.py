@@ -20,8 +20,8 @@ import asyncio
 import threading
 import aiosqlite
 import os
-from states import MainState,RepoAnalysis,PersonalRepoData,JDData
-from prompts import jd_parser,RepoAnalysis_prompt
+from states import MainState,RepoAnalysis,PersonalRepoData,JDData,ResumeData
+from prompts import jd_parser,RepoAnalysis_prompt,WRITE_PROMPT
 from extract_repo_code import extract_relevant_repositories,extract_single_repo
 from analyze_repo_adaptively import analyze_repo_adaptively
 load_dotenv()
@@ -58,24 +58,24 @@ def run_async(coro):
 # ==========================================================
 
 groq_api_key = os.getenv("GROQ_API_KEY")
-openrouter_api_key = os.getenv("openrouter_api_key")
+openrouter_api_key = os.getenv("openrouter_api_key1")
 github_access_token = os.getenv("GITHUB_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # ==========================================================
 # LLM
 # ==========================================================
-model = ChatOpenAI(
+model1 = ChatOpenAI(
     model="dots-studio/dots-3-note-preview:free",
     api_key=openrouter_api_key,
     base_url="https://openrouter.ai/api/v1"
 )
 model1 = ChatGroq(
-      model="openai/gpt-oss-120b",
+      model="llama-3.3-70b-versatile",
       api_key=groq_api_key,
       )
 
-model1 = ChatGoogleGenerativeAI(
+model = ChatGoogleGenerativeAI(
      model="gemini-2.5-flash",
      api_key=GEMINI_API_KEY,
  )
@@ -437,7 +437,140 @@ async def analyze_github_repositories(
         "RepoAnalysis": repo_analyses
     }
 
+#-----------------------------------------------------------------------------------
+import json
 
+rewrite_llm = model.with_structured_output(
+    ResumeData,
+    method="function_calling"
+)
+
+def call_llm_for_write(
+    jd_data: JDData,
+    personal_repo_data: PersonalRepoData,
+    repo_analyses: list[dict]
+) -> ResumeData:
+
+    prompt = WRITE_PROMPT.format(
+        jd_data=jd_data.model_dump_json(indent=2),
+
+        personal_repo_data=personal_repo_data.model_dump_json(indent=2),
+
+        repo_analyses=json.dumps(
+            repo_analyses,
+            indent=2
+        ),
+    )
+
+    print("📏 Prompt characters:", len(prompt))
+    print("🚀 Sending LLM request...")
+
+    result: ResumeData = rewrite_llm.invoke(prompt)
+
+    return result
+
+from resume_template import RESUME_TEMPLATE
+def render_resume_html(final_resume_content: Dict) -> str:
+    template = Template(RESUME_TEMPLATE)
+    return template.render(**final_resume_content)
+
+
+from playwright.sync_api import sync_playwright
+
+def html_to_pdf(html_content: str) -> bytes:
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+
+        page.set_content(html_content, wait_until="networkidle")
+
+        pdf_bytes = page.pdf(
+            format="A4",
+            print_background=True,
+            margin={
+                "top": "10mm",
+                "right": "10mm",
+                "bottom": "10mm",
+                "left": "10mm",
+            },
+        )
+
+        browser.close()
+        return pdf_bytes
+
+#-/-/-/-/-//-/-/-/-/-/--/-/--------------/-////////////////----------------------///
+def resume_writing(state: MainState) -> MainState:
+    print("✅ resume_writing node reached")
+    repo_analyses_for_resume = []
+    print("RepoAnalysis:", state["RepoAnalysis"])
+    for repo in state["RepoAnalysis"]:
+     projects = repo.get("projects", [])
+
+     repo_analyses_for_resume.append({
+        "repo_purpose": repo.get("repo_purpose", ""),
+        "technical_skills": repo.get("technical_skills", {}),
+        "projects": projects,
+        "key_achievements": repo.get("key_achievements", []),
+        "evidence": repo.get("evidence", []),
+    })
+    print("call llm for write resume")
+    resume_data = call_llm_for_write(
+        jd_data=state["JDData"],
+        personal_repo_data=state["PersonalRepoData"],
+        repo_analyses=repo_analyses_for_resume,
+    )
+
+    final_content = resume_data.model_dump(exclude_none=False)
+    print("Final resume content generated:", final_content)
+    return {
+        "final_resume_content": final_content,
+        "status": "generating"
+    }
+
+def pdf_generation(state: MainState) -> MainState:
+    print("✅ pdf_generation node reached")
+
+    html = render_resume_html(state["final_resume_content"])
+    print("HTML generated")
+
+    pdf_bytes = html_to_pdf(html)
+    print("PDF generated:", type(pdf_bytes), len(pdf_bytes) if pdf_bytes else None)
+
+    state["_pdf_bytes"] = pdf_bytes
+
+    print("State updated with _pdf_bytes")
+
+    return {"_pdf_bytes": pdf_bytes}
+
+def save_to_desktop(state: MainState) -> MainState:
+    import os
+
+    if "_pdf_bytes" not in state:
+        raise ValueError(
+            "PDF bytes not found in state. Make sure pdf_generation node runs before save_to_desktop."
+        )
+
+    name = (
+    state["final_resume_content"]["personal_information"]["name"]
+    .replace(" ", "_")
+)
+
+    output_dir = "/content/output"
+    os.makedirs(output_dir, exist_ok=True)
+
+    out_path = os.path.join(output_dir, f"{name}_tailored_resume.pdf")
+
+    with open(out_path, "wb") as f:
+        f.write(state["_pdf_bytes"])
+
+    state["output_pdf_path"] = out_path
+    state["status"] = "completed"
+
+    print(f"✅ Resume saved at: {out_path}")
+
+    return {"output_pdf_path": out_path, "status": "completed"}
+
+#-----------------------------------------------------------------------------------
 # ========================================================== 
 # Tool Node 
 # ========================================================== 
@@ -471,14 +604,20 @@ graph.add_node("get_user_info", get_user_info)
 graph.add_node("get_relevant_repos", get_relevant_repos)
 graph.add_node("extract_github_repositories", extract_github_repositories)
 graph.add_node("analyze_github_repositories", analyze_github_repositories)
+graph.add_node("resume_writing", resume_writing)
+graph.add_node("pdf_generation", pdf_generation)
+graph.add_node("save_to_desktop", save_to_desktop)
 
 graph.add_edge(START, "jd_analysis")
-graph.add_edge("jd_analysis", "get_github_profile")
+graph.add_edge(START, "get_github_profile")
 graph.add_edge("get_github_profile", "get_user_info")
 graph.add_edge("get_user_info", "get_relevant_repos")
 graph.add_edge("get_relevant_repos", "extract_github_repositories")
 graph.add_edge("extract_github_repositories", "analyze_github_repositories")
-graph.add_edge("analyze_github_repositories", END)
+graph.add_edge("analyze_github_repositories", "resume_writing")
+graph.add_edge("resume_writing", "pdf_generation")
+graph.add_edge("pdf_generation", "save_to_desktop")
+graph.add_edge("save_to_desktop", END)
 
 workflow = graph.compile( 
     checkpointer=checkpointer, 
