@@ -152,12 +152,31 @@ class FileBatchAnalysis(BaseModel):
     important_findings: List[str] = Field(
         default_factory=list
     )
+class ResumeData(BaseModel):
+    personal_information: PersonalInformation
+
+    professional_summary: str = ""
+
+    education: List[Education] = Field(default_factory=list)
+    experience: List[Experience] = Field(default_factory=list)
+    projects: List[Project] = Field(default_factory=list)
+
+    technical_skills: TechnicalSkills
+
+    soft_skills: List[str] = Field(default_factory=list)
+    certifications: List[Certification] = Field(default_factory=list)
+    achievements: List[str] = Field(default_factory=list)
+    languages: List[str] = Field(default_factory=list)
+
 class MainState(TypedDict):
     JDData: JDData
     RepoAnalysis: RepoAnalysis
     PersonalRepoData: PersonalRepoData
-
+    _pdf_bytes: bytes
     profile_reponame: str
     relevant_repo_urls: List[str]
     repo_code_data: Dict[str, str]
     jd_text: str
+    output_pdf_path: str
+    final_resume_content: Dict
+    status: Literal["idle", "analyzing", "generating", "completed"]
