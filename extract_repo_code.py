@@ -28,6 +28,11 @@ IGNORED_DIRS = {
     "coverage",
 
     "vendor",
+    "lib",
+    "scss",
+    "img",
+    "images",
+    "templates",
 }
 
 
@@ -40,6 +45,8 @@ IGNORED_FILES = {
     "yarn.lock",
     "pnpm-lock.yaml",
     "poetry.lock",
+    "prompts.py",
+    
 }
 
 
@@ -62,7 +69,6 @@ IMPORTANT_FILES = {
     ".env.example",
     "main.py",
     "app.py",
-
     "manage.py",
 }
 
@@ -89,8 +95,6 @@ IMPORTANT_EXTENSIONS = {
 
     ".sql",
 
-    ".html",
-    ".css",
 
     ".md",
 
@@ -133,25 +137,30 @@ def is_important_file(path: str) -> bool:
     return extension.lower() in IMPORTANT_EXTENSIONS
 
 
+
+import json
+import asyncio
+
+
+# ... IGNORED_DIRS, IGNORED_FILES, IMPORTANT_FILES, IMPORTANT_EXTENSIONS
+# ... is_ignored_path, is_important_file  (ye sab same rahenge, unchanged)
+
+# Concurrency control — GitHub API rate limits se bachne ke liye
+MAX_CONCURRENT_REQUESTS = 8
+_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+
+
+async def _call_with_semaphore(coro):
+    async with _semaphore:
+        return await coro
+
+
 async def extract_single_repo(
     repo_url: str,
     get_file_contents_tool
 ) -> Dict[str, Any]:
 
-    """
-    Ek GitHub repository ka:
-
-    - complete folder structure discover karta hai
-    - important files identify karta hai
-    - important files ka complete code extract karta hai
-    """
-
-    # -----------------------------------------------------
-    # URL → owner/repo
-    # -----------------------------------------------------
-
     parts = repo_url.rstrip("/").split("/")
-
     owner = parts[-2]
     repo = parts[-1]
 
@@ -159,89 +168,52 @@ async def extract_single_repo(
     print(f"PROCESSING REPOSITORY: {owner}/{repo}")
     print("=" * 70)
 
-    # -----------------------------------------------------
-    # Results
-    # -----------------------------------------------------
-
     folder_structure = []
-
     important_files = []
-
     extracted_files = []
-
     visited_dirs = set()
 
     # -----------------------------------------------------
-    # Recursive directory traversal
+    # Directory traversal — ab subdirectories parallel me traverse hoti hain
     # -----------------------------------------------------
 
     async def traverse_directory(path: str = "/"):
 
         normalized_path = path.rstrip("/") or "/"
 
-        # Prevent accidental loops
         if normalized_path in visited_dirs:
             return
-
         visited_dirs.add(normalized_path)
 
         try:
-
-            response = await get_file_contents_tool.ainvoke({
-                "owner": owner,
-                "repo": repo,
-                "path": normalized_path,
-                "fields": [
-                    "type",
-                    "name",
-                    "path",
-                    "size",
-                    "sha"
-                ]
-            })
-
-        except Exception as e:
-
-            print(
-                f"ERROR reading directory "
-                f"{normalized_path}: {e}"
+            response = await _call_with_semaphore(
+                get_file_contents_tool.ainvoke({
+                    "owner": owner,
+                    "repo": repo,
+                    "path": normalized_path,
+                    "fields": ["type", "name", "path", "size", "sha"]
+                })
             )
-
+        except Exception as e:
+            print(f"ERROR reading directory {normalized_path}: {e}")
             return
 
-        # -------------------------------------------------
-        # Directory response
-        # -------------------------------------------------
-        import json
-
-        
-
-        # MCP wrapper ko unwrap karo
+        # ---- MCP wrapper unwrap (same as before) ----
         if isinstance(response, list):
-
-            # Example:
-            # [{"type": "text", "text": "[{...}, {...}]"}]
-
             if len(response) == 1 and isinstance(response[0], dict):
                 wrapper = response[0]
-
                 if wrapper.get("type") == "text":
                     text = wrapper.get("text", "")
-
                     try:
                         response = json.loads(text)
                     except json.JSONDecodeError:
                         response = []
-
-        # Agar dict wrapper directly mila ho
         elif isinstance(response, dict):
-
             if "text" in response:
                 try:
                     response = json.loads(response["text"])
                 except json.JSONDecodeError:
                     response = []
-        
             else:
                 response = (
                     response.get("entries")
@@ -250,11 +222,11 @@ async def extract_single_repo(
                     or []
                 )
 
-        # Safety
         if not isinstance(response, list):
-          return
+            return
 
-        # Process actual GitHub entries
+        subdirectory_tasks = []
+
         for item in response:
 
             if not isinstance(item, dict):
@@ -262,161 +234,99 @@ async def extract_single_repo(
 
             item_type = item.get("type")
             item_path = item.get("path", "")
-            item_name = item.get("name", "")
-           
-            if not item_path:
+
+            if not item_path or is_ignored_path(item_path):
                 continue
-
-            # ---------------------------------------------
-            # Ignore unwanted directories/files
-            # ---------------------------------------------
-
-            if is_ignored_path(item_path):
-                continue
-
-            # ---------------------------------------------
-            # Directory
-            # ---------------------------------------------
 
             if item_type == "dir":
+                folder_structure.append({"path": item_path, "type": "directory"})
+                print(f"[DIR ] {item_path}")
 
-                folder_structure.append({
-                    "path": item_path,
-                    "type": "directory",
-                })
+                # sequentially await na karke, task banao — baad me sath gather karenge
+                subdirectory_tasks.append(traverse_directory(item_path))
 
-                print(
-                    f"[DIR ] {item_path}"
-                )
+            elif item_type in ("file", "blob"):
+                folder_structure.append({"path": item_path, "type": "file"})
 
-                await traverse_directory(item_path)
-
-            # ---------------------------------------------
-            # File
-            # ---------------------------------------------
-            
-            elif item_type == "file" or item_type == "blob":
-
-                folder_structure.append({
-                    "path": item_path,
-                    "type": "file",
-                })
-
-                # Only important files
-               
                 if not is_important_file(item_path):
                     continue
 
                 important_files.append(item_path)
+                print(f"[FILE] {item_path}")
 
-                print(
-                    f"[FILE] {item_path}"
-                )
-
-    # -----------------------------------------------------
-    # Start traversal
-    # -----------------------------------------------------
+        # ---- sab subdirectories ek sath parallel traverse ----
+        if subdirectory_tasks:
+            await asyncio.gather(*subdirectory_tasks)
 
     await traverse_directory("/")
 
-    print(
-        f"\nImportant files found: "
-        f"{len(important_files)}"
-    )
+    print(f"\nImportant files found: {len(important_files)}")
 
     # -----------------------------------------------------
-    # Extract complete content
+    # File content extraction — ab sab files parallel me fetch hoti hain
     # -----------------------------------------------------
 
-    for file_path in important_files:
+    async def extract_file(file_path: str):
 
-     try:
-
-        response = await get_file_contents_tool.ainvoke({
-            "owner": owner,
-            "repo": repo,
-            "path": file_path
-        })
-
-        # =================================================
-        # Extract actual text from MCP response
-        # =================================================
-
-        content = ""
-
-        if isinstance(response, str):
-
-            content = response
-
-        elif isinstance(response, dict):
-
-            content = (
-                response.get("content")
-                or response.get("text")
-                or ""
+        try:
+            response = await _call_with_semaphore(
+                get_file_contents_tool.ainvoke({
+                    "owner": owner,
+                    "repo": repo,
+                    "path": file_path
+                })
             )
 
-        elif isinstance(response, list):
+            content = ""
 
-            for item in response:
+            if isinstance(response, str):
+                content = response
 
-                if not isinstance(item, dict):
-                    continue
+            elif isinstance(response, dict):
+                content = response.get("content") or response.get("text") or ""
 
-                if item.get("type") != "text":
-                    continue
+            elif isinstance(response, list):
+                for item in response:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("type") != "text":
+                        continue
+                    text = item.get("text", "")
+                    if text.startswith("successfully downloaded"):
+                        continue
+                    if text.strip():
+                        content = text
+                        break
 
-                text = item.get("text", "")
+            if not content.strip():
+                print(f"No content found for {file_path}")
+                return None
 
-                # Status message skip karo
-                if text.startswith("successfully downloaded"):
-                    continue
+            _, extension = os.path.splitext(file_path)
 
-                # Ye actual file content hai
-                if text.strip():
-                    content = text
-                    break
+            print(f"Successfully extracted {file_path} ({len(content)} characters)")
 
-        # =================================================
-        # Empty file skip
-        # =================================================
+            return {
+                "path": file_path,
+                "extension": extension.lower(),
+                "content": content,
+            }
 
-        if not content.strip():
-            print(f"No content found for {file_path}")
-            continue
+        except Exception as e:
+            print(f"ERROR extracting {file_path}: {e}")
+            return None
 
-        _, extension = os.path.splitext(file_path)
+    # sab important files ek sath fetch karo
+    results = await asyncio.gather(*(extract_file(fp) for fp in important_files))
 
-        extracted_files.append({
-            "path": file_path,
-            "extension": extension.lower(),
-            "content": content,
-        })
-
-        print(
-            f"Successfully extracted {file_path} "
-            f"({len(content)} characters)"
-        )
-
-     except Exception as e:
-
-        print(
-            f"ERROR extracting {file_path}: {e}"
-        )
-
-    # -----------------------------------------------------
-    # Final repository result
-    # -----------------------------------------------------
+    extracted_files = [r for r in results if r is not None]
 
     return {
         "repo_url": repo_url,
         "owner": owner,
         "repo": repo,
-
         "folder_structure": folder_structure,
-
         "important_files": important_files,
-
         "files": extracted_files,
     }
 
@@ -426,50 +336,27 @@ async def extract_relevant_repositories(
     mcp_tools
 ) -> List[Dict[str, Any]]:
 
-    """
-    Multiple relevant repositories process karta hai.
-
-    Har repo ko sequentially:
-        discover → filter → extract
-    karta hai.
-    """
-
     get_file_contents_tool = next(
-        (
-            tool
-            for tool in mcp_tools
-            if tool.name == "get_file_contents"
-        ),
+        (tool for tool in mcp_tools if tool.name == "get_file_contents"),
         None
     )
-    
+
     if get_file_contents_tool is None:
+        raise RuntimeError("get_file_contents MCP tool nahi mila.")
 
-        raise RuntimeError(
-            "get_file_contents MCP tool nahi mila."
-        )
-
-    all_repositories = []
-
-    # -----------------------------------------------------
-    # Process repositories one by one
-    # -----------------------------------------------------
-
-    for repo_url in relevant_repo_urls:
-
+    async def process_repo(repo_url: str):
         try:
-
-            repo_data = await extract_single_repo(
+            return await extract_single_repo(
                 repo_url=repo_url,
                 get_file_contents_tool=get_file_contents_tool
             )
-
-            all_repositories.append(repo_data)
-
         except Exception as e:
+            print(f"FAILED repository {repo_url}: {e}")
+            return None
 
-            print(
-                f"FAILED repository {repo_url}: {e}"
-            )
+    # ---- sab repos ek sath parallel process ----
+    results = await asyncio.gather(*(process_repo(url) for url in relevant_repo_urls))
+
+    all_repositories = [r for r in results if r is not None]
 
     return all_repositories
