@@ -58,9 +58,9 @@ def run_async(coro):
 # ==========================================================
 
 groq_api_key = os.getenv("GROQ_API_KEY")
-openrouter_api_key = os.getenv("openrouter_api_key1")
+openrouter_api_key = os.getenv("openrouter_api_key")
 github_access_token = os.getenv("GITHUB_ACCESS_TOKEN")
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY_akhil")
 
 # ==========================================================
 # LLM
@@ -70,13 +70,13 @@ model1 = ChatOpenAI(
     api_key=openrouter_api_key,
     base_url="https://openrouter.ai/api/v1"
 )
-model1 = ChatGroq(
-      model="llama-3.3-70b-versatile",
+model2 = ChatGroq(
+      model="qwen/qwen3.6-27b",
       api_key=groq_api_key,
       )
 
 model = ChatGoogleGenerativeAI(
-     model="gemini-2.5-flash",
+     model="gemini-3.6-flash",
      api_key=GEMINI_API_KEY,
  )
 # ==========================================================
@@ -499,6 +499,18 @@ def html_to_pdf(html_content: str) -> bytes:
         return pdf_bytes
 
 #-/-/-/-/-//-/-/-/-/-/--/-/--------------/-////////////////----------------------///
+def get_repo_url(repo_name: str, relevant_repo_urls: list[str]) -> str:
+    repo_name = repo_name.lower().strip()
+
+    for url in relevant_repo_urls:
+        url_repo_name = url.rstrip("/").split("/")[-1].lower()
+
+        if url_repo_name == repo_name:
+            return url
+
+    return ""
+
+
 def resume_writing(state: MainState) -> MainState:
     print("✅ resume_writing node reached")
     repo_analyses_for_resume = []
@@ -521,11 +533,21 @@ def resume_writing(state: MainState) -> MainState:
     )
 
     final_content = resume_data.model_dump(exclude_none=False)
+    relevant_repo_urls = state.get("relevant_repo_urls", [])
+
+    for project in final_content.get("projects", []):
+        project["github"] = get_repo_url(
+            project.get("project_name", ""),
+            relevant_repo_urls
+        )
+
     print("Final resume content generated:", final_content)
     return {
         "final_resume_content": final_content,
         "status": "generating"
     }
+
+
 
 def pdf_generation(state: MainState) -> MainState:
     print("✅ pdf_generation node reached")
@@ -555,7 +577,7 @@ def save_to_desktop(state: MainState) -> MainState:
     .replace(" ", "_")
 )
 
-    output_dir = "/content/output"
+    output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
 
     out_path = os.path.join(output_dir, f"{name}_tailored_resume.pdf")
