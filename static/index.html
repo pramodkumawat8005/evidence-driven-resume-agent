@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>JD to Resume AI</title>
+
+    <link
+        rel="stylesheet"
+        href="/static/style.css"
+    >
+
+</head>
+
+
+<body>
+
+
+<div class="app">
+
+
+    <!-- Sidebar -->
+
+    <aside class="sidebar">
+
+        <div class="logo">
+
+            <div class="logo-icon">
+                AI
+            </div>
+
+            <div>
+                <h2>ResumeAI</h2>
+                <span>JD → Resume</span>
+            </div>
+
+        </div>
+
+
+        <div class="sidebar-section">
+
+            <p class="section-title">
+                WORKFLOW
+            </p>
+
+            <div class="step active">
+
+                <div class="step-number">
+                    1
+                </div>
+
+                <div>
+                    <strong>Job Description</strong>
+                    <small>Analyze requirements</small>
+                </div>
+
+            </div>
+
+
+            <div class="step">
+
+                <div class="step-number">
+                    2
+                </div>
+
+                <div>
+                    <strong>GitHub Analysis</strong>
+                    <small>Find relevant projects</small>
+                </div>
+
+            </div>
+
+
+            <div class="step">
+
+                <div class="step-number">
+                    3
+                </div>
+
+                <div>
+                    <strong>Resume Generation</strong>
+                    <small>Tailor your resume</small>
+                </div>
+
+            </div>
+
+
+            <div class="step">
+
+                <div class="step-number">
+                    4
+                </div>
+
+                <div>
+                    <strong>PDF Export</strong>
+                    <small>Download resume</small>
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="sidebar-bottom">
+
+            <div class="ai-status">
+
+                <span class="status-dot"></span>
+
+                <div>
+                    <strong>AI Agent Online</strong>
+                    <small>Ready to generate</small>
+                </div>
+
+            </div>
+
+        </div>
+
+    </aside>
+
+
+
+    <!-- Main -->
+
+    <main class="main">
+
+
+        <header class="topbar">
+
+            <div>
+
+                <p class="eyebrow">
+                    AI CAREER ASSISTANT
+                </p>
+
+                <h1>
+                    Build a resume that matches the job.
+                </h1>
+
+                <p class="subtitle">
+                    Our AI analyzes the job description,
+                    your GitHub projects and generates
+                    a tailored resume.
+                </p>
+
+            </div>
+
+        </header>
+
+
+
+        <!-- Input Card -->
+
+        <section class="card">
+
+            <div class="card-header">
+
+                <div>
+
+                    <h2>
+                        Job Description
+                    </h2>
+
+                    <p>
+                        Paste the complete job description below.
+                    </p>
+
+                </div>
+
+                <span class="badge">
+                    Required
+                </span>
+
+            </div>
+
+
+            <textarea
+                id="jdInput"
+                placeholder="Paste the complete Job Description here...
+
+Example:
+
+We are looking for a Python Developer with experience in Django, FastAPI, PostgreSQL, REST APIs and AI/ML..."
+            ></textarea>
+
+
+            <div class="input-footer">
+
+                <span id="charCount">
+                    0 characters
+                </span>
+
+                <span>
+                    Recommended: complete JD
+                </span>
+
+            </div>
+
+
+            <button
+                id="generateBtn"
+                class="generate-btn"
+            >
+
+                <span id="btnText">
+                    🚀 Generate Tailored Resume
+                </span>
+
+                <span
+                    id="loader"
+                    class="loader hidden"
+                ></span>
+
+            </button>
+
+        </section>
+
+
+
+        <!-- Progress -->
+
+        <section
+            id="progressCard"
+            class="card progress-card hidden"
+        >
+
+            <div class="progress-header">
+
+                <div>
+
+                    <h2>
+                        AI Agent is working
+                    </h2>
+
+                    <p id="progressText">
+                        Analyzing your job description...
+                    </p>
+
+                </div>
+
+                <div class="spinner"></div>
+
+            </div>
+
+
+            <div class="progress-line">
+
+                <div
+                    id="progressBar"
+                    class="progress-fill"
+                ></div>
+
+            </div>
+
+
+            <div class="pipeline">
+
+                <div class="pipeline-step active">
+                    <span>✓</span>
+                    JD Analysis
+                </div>
+
+                <div class="pipeline-step">
+                    <span>2</span>
+                    GitHub Analysis
+                </div>
+
+                <div class="pipeline-step">
+                    <span>3</span>
+                    Resume Writing
+                </div>
+
+                <div class="pipeline-step">
+                    <span>4</span>
+                    PDF Generation
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- Success -->
+
+        <section
+            id="resultCard"
+            class="card result-card hidden"
+        >
+
+            <div class="success-icon">
+                ✓
+            </div>
+
+            <h2>
+                Resume Generated Successfully
+            </h2>
+
+            <p>
+                Your resume has been tailored to the
+                provided job description.
+            </p>
+
+
+            <a
+                id="downloadBtn"
+                class="download-btn"
+                href="#"
+            >
+                ⬇ Download Tailored Resume
+            </a>
+
+        </section>
+
+
+
+        <!-- Error -->
+
+        <div
+            id="errorBox"
+            class="error-box hidden"
+        >
+
+            <strong>
+                ❌ Resume generation failed
+            </strong>
+
+            <p id="errorText"></p>
+
+        </div>
+
+
+    </main>
+
+</div>
+
+
+<script src="/static/script.js"></script>
+
+</body>
+
+</html>
