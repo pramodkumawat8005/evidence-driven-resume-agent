@@ -38,243 +38,78 @@ Instructions:
 9. Normalize skill names where appropriate (e.g., JS → JavaScript, Py → Python).
 10. Return valid JSON only.
 """
-
-#--------------------------------------------------------------------------------
 RepoAnalysis_prompt = """
-You are an expert AI Recruitment Analyst.
+You are an Evidence Extraction Agent for an ATS Resume Generator.
 
-Analyze the following GitHub repository content and extract ONLY information
-that is explicitly present in the repository.
+Analyze the given GitHub repository content and extract ONLY factual
+information that is explicitly supported by the code/files.
 
 Repository Data:
 {repo_data}
 
-Rules:
+RULES:
+1. Never hallucinate skills, technologies, achievements, or experience.
+2. Distinguish clearly between: implemented, mentioned, learning/tutorial,
+   planned/future, and not supported. Only "implemented" counts as a real skill.
+3. Do not infer a technology just because it's commonly used with another one.
+4. A personal project is NOT professional work experience.
+5. Do not turn ordinary implementation details (e.g. "uses FastAPI", "has an API")
+   into achievements. Only include achievements with explicit, measurable evidence.
+6. Do not invent numbers/metrics. Only use numbers explicitly present in the data.
+7. Missing info -> "" for strings, [] for lists, null for optional fields.
+8. Preserve URLs exactly as written; never construct or guess them.
+9. Merge duplicate projects/technologies/achievements into one entry — no duplicates.
+10. For every project include: project_name, description, features, technologies,
+    github, live_demo, evidence. Description must be factual, not marketed.
+11. Give short, concrete evidence for every major claim (e.g. "main.py defines a
+    LangGraph StateGraph workflow"), not vague interpretations.
 
-1. Never hallucinate or infer personal information.
-2. Extract the candidate's information exactly as mentioned.
-3. If information is not available, use:
-   - "" for strings
-   - [] for lists
-   - null for Optional fields
-4. Extract:
-   - Personal information
-   - Professional summary
-   - Education
-   - Work experience
-   - Soft skills
-   - Certifications
-   - Achievements
-   - Languages
-5. Keep extracted information concise but useful for resume generation.
-6. Do not invent dates, companies, job titles, degrees, skills, certifications,
-   or achievements.
-7. For GitHub/LinkedIn/portfolio URLs, preserve the URL exactly as found.
-8. If multiple pieces of information are found, include all relevant ones.
-9. Repository/project information should only be included when it provides
-   evidence about the candidate's professional experience, achievements,
-   education, or skills.
-
-Return the information according to the provided structured schema.
+Return ONLY the structured object matching the RepoAnalysis schema.
+No explanations, markdown, or extra fields.
 """
+#--------------------------------------------------------------------------------
+WRITE_PROMPT = """
+You are an expert ATS Resume Writer.
 
-WRITE_PROMPT = """Evidence-Driven Resume Rewriting Prompt
+Generate a concise, ONE-PAGE, ATS-friendly resume using ONLY verified
+candidate evidence — matched against the job description where relevant.
 
-You are an expert ATS resume writer and technical recruiter.
-
-Your task is to create a highly tailored, ATS-friendly resume using ONLY the information provided in:
-
-1. Job Description (`jd_data`)
-2. Personal information and existing resume/profile data (`personal_repo_data`)
-3. GitHub repository analysis and technical evidence (`repo_analyses`)
-
-## Core Objective
-
-Rewrite and optimize the candidate's resume specifically for the target job description while preserving factual accuracy.
-
-The final resume must:
-
-* Match the job description naturally.
-* Prioritize the most relevant skills, experience, and projects.
-* Use ATS-friendly terminology and keywords from the JD.
-* Present strong technical impact and relevant achievements.
-* Be concise, professional, and recruiter-friendly.
-* Never invent information.
-
-## Evidence Rules
-
-Follow these rules strictly:
-
-1. NEVER invent a skill, technology, framework, certification, project, job, company, degree, achievement, metric, responsibility, or experience.
-
-2. A technical skill should be included only when it is supported by:
-
-   * `personal_repo_data`, or
-   * `repo_analyses`, or
-   * explicit information in the candidate's existing data.
-
-3. Do NOT add a technology merely because it appears in the job description.
-
-4. If the JD requires a technology that the candidate does not have evidence for, do not falsely claim that the candidate has it.
-
-5. You may improve wording, structure, ordering, and presentation of existing evidence.
-
-6. You may infer a reasonable responsibility from repository evidence only when the evidence clearly supports it. Do not make unsupported assumptions.
-
-7. NEVER create fake numerical metrics such as:
-
-   * "improved performance by 40%"
-   * "reduced latency by 30%"
-   * "handled 10K users"
-
-   unless those numbers are explicitly present in the provided data.
-
-8. NEVER change factual dates.
-
-9. NEVER change:
-
-   * candidate name
-   * email
-   * phone
-   * GitHub URL
-   * LinkedIn URL
-   * education dates
-   * employment dates
-   * company names
-   * institution names
-
-## Job Description Matching
-
-Analyze the JD and prioritize:
-
-* Required technical skills
-* Preferred technical skills
-* Programming languages
-* Frameworks
-* Databases
-* Cloud technologies
-* AI/ML technologies
-* Tools
-* Domain knowledge
-* Responsibilities
-* Experience requirements
-
-Then tailor the resume around the strongest matching evidence.
-
-## Professional Summary
-
-Write a concise professional summary of approximately 3–5 lines.
-
-The summary should:
-
-* Mention the candidate's strongest relevant technical capabilities.
-* Reflect the target role.
-* Highlight relevant AI/ML/software engineering experience when supported.
-* Include important JD keywords only when supported by candidate evidence.
-* Avoid generic statements such as "hardworking", "passionate", or "highly motivated" unless they provide meaningful value.
-
-## Experience
-
-For each experience entry:
-
-* Preserve the original company, role, and dates.
-* Rewrite responsibilities into concise professional bullet points.
-* Prioritize responsibilities relevant to the JD.
-* Use strong action verbs.
-* Highlight technologies actually used.
-* Do not invent achievements or metrics.
-
-## Projects
-
-Select and prioritize projects that are most relevant to the JD.
-
-For each project:
-
-* Preserve the actual project name.
-* Explain the technical problem and implementation.
-* Mention relevant technologies supported by evidence.
-* Emphasize features that match the target role.
-* Use concise achievement-oriented bullet points.
-* Do not fabricate results.
-
-If a project contains multiple technologies, prioritize the technologies relevant to the JD.
-
-## Technical Skills
-
-Organize technical skills logically into the schema provided by `TechnicalSkills`.
-
-Prioritize skills according to their relevance to the target JD, but never add unsupported skills.
-
-Avoid duplicate technologies.
-
-## Education
-
-Preserve education information exactly.
-
-Do not modify degree names, institutions, universities, locations, or dates.
-
-## Certifications
-
-Include only certifications supported by the candidate data.
-
-Never invent certifications.
-
-## Achievements
-
-Include only verified achievements from the candidate data.
-
-Do not convert ordinary responsibilities into fake achievements.
-
-## Soft Skills
-
-Include only supported soft skills.
-
-Avoid excessive generic soft skills.
-
-## Languages
-
-Preserve the candidate's actual languages.
-
-## ATS Optimization
-
-Optimize the resume for ATS by:
-
-* Using standard section terminology.
-* Matching relevant JD keywords naturally.
-* Avoiding keyword stuffing.
-* Using clear technical terminology.
-* Prioritizing the most relevant technologies and experience.
-* Keeping content concise.
-
-## Important Constraint
-
-The candidate's evidence has higher priority than the job description.
-
-The JD tells you what the employer wants.
-
-The candidate data tells you what the candidate actually has.
-
-Your job is to find the strongest overlap between these two.
-
-Do NOT turn JD requirements into candidate qualifications.
-
-## Input Data
-
+Inputs:
 Job Description:
-
 {jd_data}
 
 Candidate Personal/Profile Data:
-
 {personal_repo_data}
 
-GitHub Repository Analysis:
-
+Verified GitHub Repository Analysis:
 {repo_analyses}
 
-## Final Output
+RULES:
+1. Never invent skills, technologies, experience, education, certifications,
+   achievements, metrics, or responsibilities. If the candidate has no evidence
+   for something the JD wants, do NOT include it.
+2. Only use JD keywords when the candidate has verified evidence for them —
+   no keyword stuffing.
+3. Planned/learning technologies must NOT appear as implemented skills.
+4. Do NOT blindly copy every skill found with evidence into the resume.
+   For each verified skill, judge whether it is actually worth including —
+   consider its relevance to the JD, how meaningfully it was used (not just
+   a one-line import or trivial mention), and whether it adds real value to
+   the candidate's profile. Use your own judgment to decide inclusion, not
+   just presence of evidence.
+5. Limits: max 2 projects (most JD-relevant + strongest evidence), 2 sentences
+   per project description, max 3 bullets per project. Keep skills lists concise
+   and relevant, not a full dependency dump.
+6. Professional Summary: 2-3 lines, only verified capabilities, no generic
+   filler words (e.g. "hardworking", "passionate", "results-driven").
+7. Work experience must come only from actual documented employment — never
+   from GitHub projects. If none exists, return an empty list.
+8. Preserve education, dates, company names, job titles, and URLs exactly as given.
+9. Do not create fake achievements or metrics — only what's explicitly documented.
+10. Section order: Personal Info, Summary, Technical Skills, Experience,
+    Projects, Education, Certifications, Achievements, Soft Skills, Languages.
+11. Merge duplicate projects; use the strongest combined evidence.
 
-Return ONLY a structured `ResumeData` object matching the provided Pydantic schema.
-
-Do not return explanations, comments, markdown, or additional fields.
+Return ONLY a valid structured ResumeData object matching the schema.
+No explanations, markdown, or extra fields.
 """
