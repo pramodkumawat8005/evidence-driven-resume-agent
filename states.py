@@ -19,7 +19,7 @@ class JDData(BaseModel):
     responsibilities: List[str] = Field(default_factory=list)
     qualifications: List[str] = Field(default_factory=list)
     keywords: List[str] = Field(default_factory=list)
-
+    user_query: str = ""
     location: str = ""
     employment_type: str = ""
 
@@ -108,10 +108,8 @@ class PersonalRepoData(BaseModel):
 class TechnicalSkills(BaseModel):
     programming_languages: List[str] = Field(default_factory=list)
     frameworks: List[str] = Field(default_factory=list)
-    libraries: List[str] = Field(default_factory=list)
     databases: List[str] = Field(default_factory=list)
-    cloud: List[str] = Field(default_factory=list)
-    devops: List[str] = Field(default_factory=list)
+    devops_and_cloud: List[str] = Field(default_factory=list)
     tools: List[str] = Field(default_factory=list)
     ml: List[str] = Field(default_factory=list)
     deep_learning:List[str] = Field(default_factory=list)
