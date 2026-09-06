@@ -95,29 +95,29 @@ if st.button(
         # PDF
         # ------------------------------------------------
 
-        # pdf_path = result.get("output_pdf_path")
+        pdf_path = result.get("output_pdf_path")
 
-        # if pdf_path and os.path.exists(pdf_path):
+        if pdf_path and os.path.exists(pdf_path):
 
-        #     st.success(
-        #         "✅ Tailored Resume Generated Successfully!"
-        #     )
+            st.success(
+                "✅ Tailored Resume Generated Successfully!"
+            )
 
-        #     with open(pdf_path, "rb") as f:
+            with open(pdf_path, "rb") as f:
 
-        #         st.download_button(
-        #             label="⬇️ Download Tailored Resume",
-        #             data=f.read(),
-        #             file_name="Tailored_Resume.pdf",
-        #             mime="application/pdf",
-        #             use_container_width=True
-        #         )
+                st.download_button(
+                    label="⬇️ Download Tailored Resume",
+                    data=f.read(),
+                    file_name="Tailored_Resume.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
 
-        # else:
+        else:
 
-        #     st.warning(
-        #         "Agent completed, but PDF path was not found."
-        #     )
+            st.warning(
+                "Agent completed, but PDF path was not found."
+            )
 
         # ------------------------------------------------
         # Agent Analysis
