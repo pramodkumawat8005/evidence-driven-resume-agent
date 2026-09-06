@@ -6,23 +6,30 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 import os
 load_dotenv()
-GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY1")
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY")
 groq_api_key = os.getenv("GROQ_API_KEY")
-openrouter_api_key = os.getenv("openrouter_api_key1")
-model1 = ChatOpenAI(
+GEMINI_API_KEY1 = os.getenv("GOOGLE_API_KEY1")
+openrouter_api_key = os.getenv("openrouter_api_key")
+model = ChatOpenAI(
     model="openrouter/free",
     api_key=openrouter_api_key,
     base_url="https://openrouter.ai/api/v1"
 )
 model1 = ChatGroq(
-      model="llama-3.3-70b-versatile",
+      model="openai/gpt-oss-120b",
       api_key=groq_api_key,
       )
-model = ChatGoogleGenerativeAI(
+model2 = ChatGoogleGenerativeAI(
      model="gemini-2.5-flash",
      api_key=GEMINI_API_KEY,
  )
-structured_llm = model.with_structured_output(RepoAnalysis)
+model3 = ChatGoogleGenerativeAI(
+     model="gemini-2.5-flash",
+     api_key=GEMINI_API_KEY1,
+ )
+#structured_llm = model1.with_structured_output(RepoAnalysis)
+structured_llm = model1.with_structured_output(RepoAnalysis, method="json_schema")
+batch_llm = model1.with_structured_output(FileBatchAnalysis, method="json_schema")
 
 def build_repo_text(repo_name: str, files: dict) -> str:
 
@@ -109,19 +116,14 @@ def chunk_files(
         )
 
 
-batch_llm = model.with_structured_output(
-    FileBatchAnalysis
-)
+#batch_llm = model1.with_structured_output(FileBatchAnalysis)
 
 async def analyze_file_batch(
     repo_name: str,
     files: dict
 ) -> FileBatchAnalysis:
 
-    repo_text = build_repo_text(
-        repo_name,
-        files
-    )
+    repo_text = build_repo_text(repo_name, files)
 
     prompt = f"""
 You are analyzing part of a GitHub repository.
@@ -202,6 +204,9 @@ async def analyze_repo_adaptively(
     # -----------------------------------------
     # Combined repository content
     # -----------------------------------------
+    if not files:
+     print(f"⚠️ No files found in {repo_name}. Skipping analysis.")
+     return None
 
     total_chars = sum(
         len(content)
@@ -217,31 +222,22 @@ async def analyze_repo_adaptively(
         f"\nCharacters: {total_chars}"
         f"\nEstimated tokens: {estimated_tokens}"
     )
-
     # -----------------------------------------
     # SMALL CONTEXT
     # -----------------------------------------
-
     SAFE_TOKEN_LIMIT = 12000
 
     if estimated_tokens <= SAFE_TOKEN_LIMIT:
 
-        print(
-            f"Using DIRECT analysis for {repo_name}"
-        )
+        print(f"Using DIRECT analysis for {repo_name}")
 
-        return await direct_repo_analysis(
-            repo_name,
-            files
-        )
+        return await direct_repo_analysis(repo_name,files)
 
     # -----------------------------------------
     # LARGE CONTEXT
     # -----------------------------------------
 
-    print(
-        f"Using MAP-REDUCE analysis for {repo_name}"
-    )
+    print(f"Using MAP-REDUCE analysis for {repo_name}" )
 
     batch_results = []
 
@@ -252,28 +248,18 @@ async def analyze_repo_adaptively(
 
         print(
             f"Analyzing batch {batch_number} "
-            f"for {repo_name}"
-        )
-
-        result = await analyze_file_batch(
-            repo_name,
-            batch
-        )
-
+            f"for {repo_name}")
+        
+        result = await analyze_file_batch(repo_name,batch)
         batch_results.append(result)
-
     # -----------------------------------------
     # REDUCE
     # -----------------------------------------
 
     print(
         f"Reducing {len(batch_results)} "
-        f"batch results for {repo_name}"
-    )
+        f"batch results for {repo_name}")
 
-    final_analysis = await reduce_repo_analysis(
-        repo_name,
-        batch_results
-    )
+    final_analysis = await reduce_repo_analysis(repo_name,batch_results)
 
     return final_analysis
